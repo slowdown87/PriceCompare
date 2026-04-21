@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Loader, ChevronDown, TrendingDown, Award } from 'lucide-react';
 import * as echarts from 'echarts';
-import { Product, AnalysisResult } from '../utils/types';
+import { Product, AnalysisResult, LocalProductAnalyzer } from '../utils/types';
 
 const Home: React.FC = () => {
   const [keyword, setKeyword] = useState('手机');
@@ -13,6 +13,7 @@ const Home: React.FC = () => {
   const [sortBy, setSortBy] = useState('price');
   const [sortOrder, setSortOrder] = useState('asc');
   const [activeTab, setActiveTab] = useState('all');
+  const analyzer = new LocalProductAnalyzer();
 
   // 处理平台选择
   const handlePlatformChange = (platform: string) => {
@@ -31,37 +32,25 @@ const Home: React.FC = () => {
 
     setLoading(true);
     try {
-      // 采集商品数据
-      const scrapeResponse = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ keyword, platforms, limit }),
-      });
+      // 从静态JSON文件加载数据
+      const response = await fetch('/data/products.json');
+      const products = await response.json();
+      
+      // 过滤数据（模拟平台筛选）
+      const filteredProducts = products.filter((product: any) => 
+        platforms.includes(product.platform)
+      );
+      
+      setProducts(filteredProducts);
 
-      const scrapeData = await scrapeResponse.json();
-      if (scrapeData.success) {
-        setProducts(scrapeData.data);
-
-        // 分析数据
-        const analyzeResponse = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ products: scrapeData.data, sortBy, sortOrder }),
-        });
-
-        const analyzeData = await analyzeResponse.json();
-        if (analyzeData.success) {
-          setAnalysisResult(analyzeData.data);
-          // 渲染图表
-          setTimeout(() => {
-            renderPriceTrendChart(analyzeData.data.priceTrend);
-          }, 100);
-        }
-      }
+      // 使用本地分析器分析数据
+      const analysis = analyzer.analyze(filteredProducts, sortBy, sortOrder);
+      setAnalysisResult(analysis);
+      
+      // 渲染图表
+      setTimeout(() => {
+        renderPriceTrendChart(analysis.priceTrend);
+      }, 100);
     } catch (error) {
       console.error('搜索失败:', error);
     } finally {
@@ -71,11 +60,25 @@ const Home: React.FC = () => {
 
   // 处理排序
   const handleSort = (newSortBy: string) => {
+    let newSortOrder = sortOrder;
     if (newSortBy === sortBy) {
-      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+      newSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
     } else {
-      setSortBy(newSortBy);
-      setSortOrder('asc');
+      newSortOrder = 'asc';
+    }
+    
+    setSortBy(newSortBy);
+    setSortOrder(newSortOrder);
+    
+    // 重新分析数据
+    if (products.length > 0) {
+      const analysis = analyzer.analyze(products, newSortBy, newSortOrder);
+      setAnalysisResult(analysis);
+      
+      // 重新渲染图表
+      setTimeout(() => {
+        renderPriceTrendChart(analysis.priceTrend);
+      }, 100);
     }
   };
 
